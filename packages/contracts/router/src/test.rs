@@ -44,6 +44,15 @@ fn exact_output_single_success() {
 }
 
 #[test]
+#[should_panic(expected = "invalid path")]
+fn reverts_on_same_token_pool_rate() {
+    let (env, router_id, token_a, _, _) = setup();
+    let client = RouterClient::new(&env, &router_id);
+
+    client.set_pool_rate(&token_a, &token_a, &2);
+}
+
+#[test]
 #[should_panic(expected = "slippage breach")]
 fn reverts_on_slippage_breach() {
     let (env, router_id, token_a, token_b, _) = setup();
