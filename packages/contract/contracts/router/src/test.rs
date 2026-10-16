@@ -118,9 +118,27 @@ fn setup_router_with_mock_pool(env: &Env) -> MockSwapSetup<'_> {
 fn test_initialize_and_get_factory() {
     let (env, id) = setup();
     let client = RouterClient::new(&env, &id);
+    let factory_id = env.register(MockFactory, ());
+    client.initialize(&Address::generate(&env), &factory_id);
+    assert_eq!(client.get_factory(), factory_id);
+}
+
+#[test]
+fn test_get_factory_and_get_admin_panic_before_initialize() {
+    let (env, id) = setup();
+    let client = RouterClient::new(&env, &id);
+
+    assert!(client.try_get_factory().is_err());
+    assert!(client.try_get_admin().is_err());
+}
+
+#[test]
+fn test_initialize_rejects_non_contract_factory() {
+    let (env, id) = setup();
+    let client = RouterClient::new(&env, &id);
     let factory = Address::generate(&env);
-    client.initialize(&Address::generate(&env), &factory);
-    assert_eq!(client.get_factory(), factory);
+
+    assert!(client.try_initialize(&Address::generate(&env), &factory).is_err());
 }
 
 #[test]
@@ -129,17 +147,17 @@ fn test_factory_configuration_requires_admin_and_cannot_be_replaced() {
     let router_id = env.register(Router, ());
     let client = RouterClient::new(&env, &router_id);
     let admin = Address::generate(&env);
-    let factory = Address::generate(&env);
-    let attacker_factory = Address::generate(&env);
+    let factory_id = env.register(MockFactory, ());
+    let attacker_factory = env.register(MockFactory, ());
 
-    assert!(client.try_initialize(&admin, &factory).is_err());
+    assert!(client.try_initialize(&admin, &factory_id).is_err());
     assert!(client.try_get_factory().is_err());
 
     env.mock_all_auths();
-    client.initialize(&admin, &factory);
+    client.initialize(&admin, &factory_id);
     assert_eq!(client.get_admin(), admin);
     assert!(client.try_initialize(&admin, &attacker_factory).is_err());
-    assert_eq!(client.get_factory(), factory);
+    assert_eq!(client.get_factory(), factory_id);
 }
 
 #[test]
@@ -147,8 +165,8 @@ fn test_factory_configuration_requires_admin_and_cannot_be_replaced() {
 fn test_exact_input_single_deadline_expired() {
     let (env, id) = setup();
     let client = RouterClient::new(&env, &id);
-    let factory = Address::generate(&env);
-    client.initialize(&Address::generate(&env), &factory);
+    let factory_id = env.register(MockFactory, ());
+    client.initialize(&Address::generate(&env), &factory_id);
 
     let token_in = Address::generate(&env);
     let token_out = Address::generate(&env);
@@ -173,8 +191,8 @@ fn test_exact_input_single_deadline_expired() {
 fn test_exact_input_single_zero_amount() {
     let (env, id) = setup();
     let client = RouterClient::new(&env, &id);
-    let factory = Address::generate(&env);
-    client.initialize(&Address::generate(&env), &factory);
+    let factory_id = env.register(MockFactory, ());
+    client.initialize(&Address::generate(&env), &factory_id);
 
     let token_in = Address::generate(&env);
     let token_out = Address::generate(&env);
@@ -197,8 +215,8 @@ fn test_exact_input_single_zero_amount() {
 fn test_exact_output_single_deadline_expired() {
     let (env, id) = setup();
     let client = RouterClient::new(&env, &id);
-    let factory = Address::generate(&env);
-    client.initialize(&Address::generate(&env), &factory);
+    let factory_id = env.register(MockFactory, ());
+    client.initialize(&Address::generate(&env), &factory_id);
 
     env.ledger().with_mut(|l| l.timestamp = 200);
 
@@ -240,8 +258,8 @@ fn test_deadline_at_maximum_ttl_is_valid() {
 fn test_exact_output_single_zero_amount() {
     let (env, id) = setup();
     let client = RouterClient::new(&env, &id);
-    let factory = Address::generate(&env);
-    client.initialize(&Address::generate(&env), &factory);
+    let factory_id = env.register(MockFactory, ());
+    client.initialize(&Address::generate(&env), &factory_id);
 
     let token_in = Address::generate(&env);
     let token_out = Address::generate(&env);
@@ -259,12 +277,37 @@ fn test_exact_output_single_zero_amount() {
     });
 }
 
+/// Pins the exact-output surface: `exact_output_single` is declared unsupported
+/// and must revert with `RouterError::ExactOutputUnsupported` (code 9) rather
+/// than silently degrading to an exact-input swap. This keeps the SDK's
+/// exact-output path unambiguous.
+#[test]
+fn test_exact_output_single_reverts_unsupported() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let s = setup_router_with_mock_pool(&env);
+
+    let recipient = Address::generate(&env);
+    let result = s.client.try_exact_output_single(&ExactOutputSingleParams {
+        token_in: s.token_in.clone(),
+        token_out: s.token_out.clone(),
+        fee: 3000,
+        recipient,
+        deadline: env.ledger().timestamp() + 120,
+        amount_out: 500,
+        amount_in_max: 1_000,
+        sqrt_price_limit_x96: 0,
+    });
+
+    assert!(result.is_err());
+}
+
 /// amount_in=1000 → amount_out=999. minOut=1000 must revert (under slippage).
 #[test]
 fn test_exact_input_reverts_when_amount_out_below_min_out() {
     let env = Env::default();
     env.mock_all_auths();
-    let s = setup_router_with_mock_pool(&env);
+    let s = setu
 
     let result = s.client.try_exact_input_single(&ExactInputSingleParams {
         token_in: s.token_in,

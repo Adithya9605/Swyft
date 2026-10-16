@@ -28,6 +28,36 @@ fn init_pool(env: &Env, id: &Address, t0: &Address, t1: &Address) {
     client.initialize(t0, t1, &Q96, &3000u32);
 }
 
+// ── Initialize validation ─────────────────────────────────────────────────────
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_initialize_rejects_zero_sqrt_price() {
+    let (env, id, t0, t1, _lp) = setup();
+    let client = PoolClient::new(&env, &id);
+    client.initialize(&t0, &t1, &0u128, &3000u32);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_initialize_rejects_price_above_max_tick() {
+    let (env, id, t0, t1, _lp) = setup();
+    let client = PoolClient::new(&env, &id);
+    // A price far above the MAX_TICK bound derives a tick outside the range.
+    client.initialize(&t0, &t1, &(u128::MAX / 2), &3000u32);
+}
+
+#[test]
+fn test_initialize_accepts_valid_price_and_stores_derived_tick() {
+    let (env, id, t0, t1, _lp) = setup();
+    let client = PoolClient::new(&env, &id);
+    client.initialize(&t0, &t1, &Q96, &3000u32);
+
+    let state = client.get_state();
+    assert_eq!(state.sqrt_price_x96, Q96);
+    assert_eq!(state.tick, 0);
+}
+
 // ── Tick bitmap ───────────────────────────────────────────────────────────────
 
 #[test]
