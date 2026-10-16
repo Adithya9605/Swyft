@@ -34,6 +34,20 @@ function scaleReserve(reserve: bigint, decimals: number): number {
   return Number(whole) + Number(remainder) / 10 ** decimals;
 }
 
+/**
+ * Computes the USD-denominated TVL for a single pool.
+ *
+ * Edge-case behaviour (documented so callers can rely on it):
+ * - A pool with zero liquidity (no positions, or all positions with zero
+ *   liquidity) returns `0` rather than `NaN`/`Infinity`.
+ * - A pool whose token has no usable USD price (`price0`/`price1` is not a
+ *   finite positive number) returns `0`. The pool is treated as having no
+ *   measurable value instead of throwing, so a single unpriced token cannot
+ *   poison an aggregate TVL sum.
+ * - Structurally invalid input (bad sqrt price, invalid tick range, malformed
+ *   liquidity string, invalid decimals) still throws, since those indicate a
+ *   data-integrity bug rather than a legitimately missing price.
+ */
 export function calculatePoolTvl({
   currentSqrtPrice,
   positions,
@@ -48,7 +62,7 @@ export function calculatePoolTvl({
     !Number.isFinite(price1) ||
     price1 <= 0
   ) {
-    throw new Error('Pool USD prices are invalid');
+    return 0;
   }
   if (
     !Number.isInteger(decimals0) ||
@@ -90,6 +104,8 @@ export function calculatePoolTvl({
       throw new Error('Indexed position liquidity is invalid');
     }
 
+    if (liquidity === 0n) continue;
+
     const amounts = getAmountsForLiquidity({
       sqrtPriceX96,
       sqrtPriceLowerX96: tickToSqrtPriceX96(position.lowerTick),
@@ -103,6 +119,8 @@ export function calculatePoolTvl({
   // Reserves are scaled with bigint arithmetic before any number conversion so
   // large reserves are computed exactly within double precision instead of
   // being silently rounded by an unsafe bigint -> number cast.
+  if (reserve0 === 0n && reserve1 === 0n) return 0;
+
   const tvl =
     scaleReserve(reserve0, decimals0) * price0 +
     scaleReserve(reserve1, decimals1) * price1;

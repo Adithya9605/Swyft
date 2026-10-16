@@ -104,10 +104,48 @@ describe('calculatePoolTvl', () => {
     const scale0 = 10n ** BigInt(decimals0);
     const scale1 = 10n ** BigInt(decimals1);
     const exact =
+      (Number(amount0 / scale0) + Numbe
+        price0,
+        price1,
+        decimals0,
+        decimals1,
+      });
+    } catch (error) {
+      expect((error as Error).message).toBe('Computed pool TVL is invalid');
+      return;
+    }
+
+    // If the function chooses to compute rather than reject, the result must
+    // match the exact bigint-scaled value within a documented tolerance.
+    const scale0 = 10n ** BigInt(decimals0);
+    const scale1 = 10n ** BigInt(decimals1);
+    const exact =
       (Number(amount0 / scale0) + Number(amount0 % scale0) / Number(scale0)) *
         price0 +
       (Number(amount1 / scale1) + Number(amount1 % scale1) / Number(scale1)) *
         price1;
     expect(result).toBeCloseTo(exact, 6);
+  });
+
+  it('keeps the aggregate TVL finite when a pool is invalid', () => {
+    const valid = calculatePoolTvl({
+      currentSqrtPrice,
+      positions: [position],
+      price0: 1,
+      price1: 1,
+      decimals0: 7,
+      decimals1: 7,
+    });
+    const invalid = calculatePoolTvl({
+      currentSqrtPrice,
+      positions: [{ ...position, liquidity: '0' }],
+      price0: 1,
+      price1: 1,
+      decimals0: 7,
+      decimals1: 7,
+    });
+    const aggregate = valid + invalid;
+    expect(Number.isFinite(aggregate)).toBe(true);
+    expect(aggregate).toBe(valid);
   });
 });
